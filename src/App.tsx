@@ -40,7 +40,7 @@ const MARGIN_STEPS = Array.from({ length: 21 }, (_, i) => i * 5); // 0% to 100% 
 
 function App() {
   const printRef = useRef<HTMLDivElement>(null);
-  const [isMaximized, setIsMaximized] = useState<boolean>(false);
+  const [isMaximized, setIsMaximized] = useState<boolean>(true);
   const [shapeType, setShapeType] = useState<ShapeType>('rectangle');
   const [width, setWidth] = useState<number>(20);
   const [height, setHeight] = useState<number>(20);
