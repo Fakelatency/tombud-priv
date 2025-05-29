@@ -1,0 +1,14 @@
+// ignore node modules
+node_modules/
+// ignore build output
+dist/
+// ignore logs
+logs/
+// ignore environment variables
+.env
+// ignore coverage reports
+coverage/
+// ignore temporary files
+*.tmp
+// ignore IDE specific files
+.vscode/

@@ -1,6 +1,15 @@
 import React, { useState, useRef } from 'react';
 import { Calculator, Square, LucideLayoutTemplate, LayoutTemplate, Printer, Download } from 'lucide-react';
 import { useReactToPrint } from 'react-to-print';
+import { PDFDownloadLink } from '@react-pdf/renderer'; // Import PDFDownloadLink
+import OfferPDFDocument from './OfferPDFDocument'; // Adjust path if needed
+
+// register lato font
+import '@fontsource/lato/latin-400.css';
+import '@fontsource/lato/latin-700.css';
+
+
+
 
 interface CalculationResult {
   length: number;
@@ -43,7 +52,8 @@ function App() {
   const [rebarSpecs, setRebarSpecs] = useState<RebarSpec[]>(DEFAULT_REBAR_SPECS);
   const [clientName, setClientName] = useState<string>('');
   const [clientEmail, setClientEmail] = useState<string>('');
-  
+  const [overlapLength, setOverlapLength] = useState<number>(5);
+
   const handlePrint = useReactToPrint({
     content: () => printRef.current,
   });
@@ -51,10 +61,10 @@ function App() {
   const calculateShape = (): CalculationResult => {
     const selectedRebar = rebarSpecs.find(spec => spec.diameter === diameter)!;
     let shapeLength = 0;
-    
+
     switch (shapeType) {
       case 'rectangle':
-        shapeLength = ((width * 2 + height * 2) + 10) / 100;
+        shapeLength = ((width * 2 + height * 2) + overlapLength) / 100;
         break;
       case 'L':
         shapeLength = (arm1Length + arm2Length) / 100;
@@ -63,13 +73,13 @@ function App() {
         shapeLength = (arm1Length + width + arm3Length) / 100;
         break;
     }
-    
+
     const weight = shapeLength * selectedRebar.weightPerMeter;
     const netCost = weight * selectedRebar.pricePerKg;
     const marginAmount = netCost * (margin / 100);
     const netWithMargin = netCost + marginAmount;
     const grossCost = netWithMargin * (1 + VAT_RATE);
-    
+
     return {
       length: shapeLength,
       weight,
@@ -100,20 +110,26 @@ function App() {
     );
   };
 
-  // SVG rendering parameters
   const svgPadding = 40;
   const svgSize = 240;
-  const maxDimension = Math.max(
-    width,
-    height,
-    arm1Length,
-    arm2Length,
-    arm3Length
+  const currentMaxDimension = Math.max(
+    shapeType === 'rectangle' ? width : 0,
+    shapeType === 'rectangle' ? height : 0,
+    shapeType === 'L' || shapeType === 'U' ? arm1Length : 0,
+    shapeType === 'L' ? arm2Length : 0,
+    shapeType === 'U' ? arm3Length : 0,
+    shapeType === 'U' && shapeType !== 'rectangle' ? width : 0, // width for U shape
+    shapeType === 'rectangle' ? overlapLength : 0
   );
   
-  const scale = (svgSize - svgPadding * 3) / maxDimension;
+  // Ensure maxDimension is not zero to prevent division by zero or excessively large scale
+  const safeMaxDimension = currentMaxDimension > 0 ? currentMaxDimension : 1;
+
+
+  const scale = (svgSize - svgPadding * 3) / safeMaxDimension;
   const startX = svgPadding * 1.5;
   const startY = svgPadding * 1.5;
+  const overlapLineOffset = 2 * scale;
 
   const renderDimensionLine = (
     x1: number,
@@ -122,18 +138,17 @@ function App() {
     y2: number,
     label: string,
     offset: number = 20,
-    position: 'above' | 'below' | 'right' = 'above'
+    position: 'above' | 'below' | 'right' | 'left' = 'above'
   ) => {
     const dx = x2 - x1;
     const dy = y2 - y1;
     const angle = Math.atan2(dy, dx);
-    const length = Math.sqrt(dx * dx + dy * dy);
     const midX = (x1 + x2) / 2;
     const midY = (y1 + y2) / 2;
-    
+
     let labelX = midX;
     let labelY = midY;
-    
+
     switch (position) {
       case 'above':
         labelX = midX - offset * Math.sin(angle);
@@ -144,8 +159,12 @@ function App() {
         labelY = midY - offset * Math.cos(angle);
         break;
       case 'right':
-        labelX = midX + offset;
-        labelY = midY;
+        labelX = midX + offset * Math.cos(angle);
+        labelY = midY + offset * Math.sin(angle);
+        break;
+      case 'left':
+        labelX = midX - offset * Math.cos(angle);
+        labelY = midY - offset * Math.sin(angle);
         break;
     }
 
@@ -160,10 +179,14 @@ function App() {
           strokeWidth="1"
           strokeDasharray="4"
         />
+        {/* Dimension ticks for HTML SVG */}
+        <line x1={x1 - 3 * Math.sin(angle)} y1={y1 + 3 * Math.cos(angle)} x2={x1 + 3 * Math.sin(angle)} y2={y1 - 3 * Math.cos(angle)} stroke="#6b7280" strokeWidth="1" />
+        <line x1={x2 - 3 * Math.sin(angle)} y1={y2 + 3 * Math.cos(angle)} x2={x2 + 3 * Math.sin(angle)} y2={y2 - 3 * Math.cos(angle)} stroke="#6b7280" strokeWidth="1" />
         <text
           x={labelX}
           y={labelY}
           textAnchor="middle"
+          dominantBaseline="middle"
           className="text-xs fill-gray-600 font-medium"
         >
           {label} cm
@@ -172,48 +195,86 @@ function App() {
     );
   };
 
-  const renderShape = () => {
+const renderShape = () => {
+    const scaledOverlap = overlapLength * scale;
+    const overlapAngle = Math.PI / 4;
+
     switch (shapeType) {
       case 'rectangle':
+        const rectX = startX;
+        const rectY = startY;
+        const rectWidth = width * scale;
+        const rectHeight = height * scale;
+
+        const S = scaledOverlap;
+        const cosA = Math.cos(overlapAngle);
+        const sinA = Math.sin(overlapAngle);
+
+        const dimLineStartX = rectX + rectWidth;
+        const dimLineStartY = rectY;
+        const dimLineEndX = dimLineStartX - S * cosA;
+        const dimLineEndY = dimLineStartY + S * sinA;
+
+        const halfTotalOffset = overlapLineOffset / 2;
+        const perpOffsetX = halfTotalOffset * sinA;
+        const perpOffsetY = halfTotalOffset * cosA;
+
+        const line1StartX = dimLineStartX + perpOffsetX;
+        const line1StartY = dimLineStartY + perpOffsetY;
+        const line1EndX = dimLineEndX + perpOffsetX;
+        const line1EndY = dimLineEndY + perpOffsetY;
+
+        const line2StartX = dimLineStartX - perpOffsetX;
+        const line2StartY = dimLineStartY - perpOffsetY;
+        const line2EndX = dimLineEndX - perpOffsetX;
+        const line2EndY = dimLineEndY - perpOffsetY;
+
         return (
           <>
             <rect
-              x={startX}
-              y={startY}
-              width={width * scale}
-              height={height * scale}
+              x={rectX}
+              y={rectY}
+              width={rectWidth}
+              height={rectHeight}
               fill="none"
               stroke="#2563eb"
               strokeWidth="2"
             />
             <path
-              d={`M ${startX + width * scale} ${startY} L ${startX + width * scale - 10 * scale * Math.cos(Math.PI/4)} ${startY + 10 * scale * Math.sin(Math.PI/4)}`}
+              d={`M ${line1StartX} ${line1StartY} L ${line1EndX} ${line1EndY}`}
+              stroke="#dc2626"
+              strokeWidth="2"
+            />
+            <path
+              d={`M ${line2StartX} ${line2StartY} L ${line2EndX} ${line2EndY}`}
               stroke="#dc2626"
               strokeWidth="2"
             />
             {renderDimensionLine(
-              startX,
-              startY - 10,
-              startX + width * scale,
-              startY - 10,
+              rectX,
+              rectY - 10,
+              rectX + rectWidth,
+              rectY - 10,
               width.toString(),
               20,
               'above'
             )}
             {renderDimensionLine(
-              startX - 20,
-              startY,
-              startX - 20,
-              startY + height * scale,
-              height.toString()
+              rectX - 10,
+              rectY,
+              rectX - 10,
+              rectY + rectHeight,
+              height.toString(),
+              10,
+              'left'
             )}
             {renderDimensionLine(
-              startX + width * scale,
-              startY,
-              startX + width * scale - 10 * scale * Math.cos(Math.PI/4),
-              startY + 10 * scale * Math.sin(Math.PI/4),
-              '10',
-              15,
+              dimLineStartX,
+              dimLineStartY,
+              dimLineEndX,
+              dimLineEndY,
+              overlapLength.toString(),
+              31,
               'below'
             )}
           </>
@@ -231,20 +292,20 @@ function App() {
             />
             {renderDimensionLine(
               startX,
-              startY - 20,
+              startY - 10,
               startX + arm1Length * scale,
-              startY - 20,
+              startY - 10,
               arm1Length.toString(),
-              20,
+              10,
               'above'
             )}
             {renderDimensionLine(
-              startX + arm1Length * scale + 20,
+              startX + arm1Length * scale + 10,
               startY,
-              startX + arm1Length * scale + 20,
+              startX + arm1Length * scale + 10,
               startY + arm2Length * scale,
               arm2Length.toString(),
-              0,
+              10,
               'right'
             )}
           </>
@@ -262,78 +323,98 @@ function App() {
               strokeWidth="2"
             />
             {renderDimensionLine(
-              startX - 20,
+              startX - 10,
               startY,
-              startX - 20,
+              startX - 10,
               startY + arm1Length * scale,
-              arm1Length.toString()
+              arm1Length.toString(),
+              10,
+              'left'
             )}
             {renderDimensionLine(
               startX,
-              startY + arm1Length * scale + 20,
+              startY + arm1Length * scale + 10,
               startX + width * scale,
-              startY + arm1Length * scale + 20,
-              width.toString()
+              startY + arm1Length * scale + 10,
+              width.toString(),
+              10,
+              'below'
             )}
             {renderDimensionLine(
-              startX + width * scale + 20,
+              startX + width * scale + 10,
               startY + arm1Length * scale - arm3Length * scale,
-              startX + width * scale + 20,
+              startX + width * scale + 10,
               startY + arm1Length * scale,
               arm3Length.toString(),
-              0,
+              10,
               'right'
             )}
           </>
         );
     }
   };
-
   const result = calculateShape();
 
-  const generateOffer = () => {
-    const date = new Date().toLocaleDateString('pl-PL');
-    const offerContent = `
-OFERTA CENOWA - ${date}
+// -  const generateOffer = () => {
+// -    const date = new Date().toLocaleDateString('pl-PL');
+// -    const offerContent = `
+// - OFERTA CENOWA - ${date}
+// -
+// - Szanowny/a ${clientName},
+// -
+// - Dziękujemy za zainteresowanie naszą ofertą. Poniżej przedstawiamy szczegóły wyceny:
+// -
+// - SPECYFIKACJA:
+// - - Typ kształtu: ${shapeType === 'rectangle' ? `Prostokąt (Zakład: ${overlapLength}cm)` : shapeType === 'L' ? 'Kształt L' : 'Kształt U'}
+// - - Średnica pręta: Φ${diameter}mm
+// - - Długość całkowita: ${result.length.toFixed(2)}m
+// - - Waga: ${result.weight.toFixed(2)}kg
+// -
+// - KOSZTY:
+// - 1. Cena netto: ${result.netWithMargin.toFixed(2)} zł
+// - 2. VAT (23%): ${(result.grossCost - result.netWithMargin).toFixed(2)} zł
+// - 3. Cena końcowa brutto: ${result.grossCost.toFixed(2)} zł
+// -
+// - Oferta ważna przez 14 dni od daty wystawienia.
+// -
+// - Z poważaniem,
+// - Zespół Kalkulatora Kosztów Zbrojenia
+// -    `;
+// -
+// -    const blob = new Blob([offerContent], { type: 'text/plain' });
+// -    const url = URL.createObjectURL(blob);
+// -    const a = document.createElement('a');
+// -    a.href = url;
+// -    a.download = `oferta-${date}.txt`;
+// -    document.body.appendChild(a);
+// -    a.click();
+// -    document.body.removeChild(a);
+// -    URL.revokeObjectURL(url);
+// -  };
 
-Szanowny/a ${clientName},
 
-Dziękujemy za zainteresowanie naszą ofertą. Poniżej przedstawiamy szczegóły wyceny:
-
-SPECYFIKACJA:
-- Typ kształtu: ${shapeType === 'rectangle' ? 'Prostokąt' : shapeType === 'L' ? 'Kształt L' : 'Kształt U'}
-- Średnica pręta: Φ${diameter}mm
-- Długość całkowita: ${result.length.toFixed(2)}m
-- Waga: ${result.weight.toFixed(2)}kg
-
-KOSZTY:
-1. Cena netto (bez marży): ${result.netCost.toFixed(2)} zł
-2. Marża (${margin}%): ${result.marginAmount.toFixed(2)} zł
-3. Cena netto z marżą: ${result.netWithMargin.toFixed(2)} zł
-4. VAT (23%): ${(result.grossCost - result.netWithMargin).toFixed(2)} zł
-5. Cena końcowa brutto: ${result.grossCost.toFixed(2)} zł
-
-Oferta ważna przez 14 dni od daty wystawienia.
-
-Z poważaniem,
-Zespół Kalkulatora Kosztów Zbrojenia
-    `;
-
-    const blob = new Blob([offerContent], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `oferta-${date}.txt`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+  // Props for the PDF document
+  const offerPdfProps = {
+    clientName,
+    clientEmail,
+    shapeType,
+    diameter,
+    overlapLength: shapeType === 'rectangle' ? overlapLength : undefined,
+    width: (shapeType === 'rectangle' || shapeType === 'U') ? width : undefined,
+    height: shapeType === 'rectangle' ? height : undefined,
+    arm1Length: (shapeType === 'L' || shapeType === 'U') ? arm1Length : undefined,
+    arm2Length: shapeType === 'L' ? arm2Length : undefined,
+    arm3Length: shapeType === 'U' ? arm3Length : undefined,
+    result,
+    margin,
   };
+
 
   return (
     <div className={`min-h-screen bg-gray-100 p-4 ${isMaximized ? 'p-0' : ''}`}>
       <div className={`bg-white rounded-lg shadow-lg overflow-hidden ${isMaximized ? 'w-full h-screen m-0' : 'max-w-4xl mx-auto'}`}>
         <div className="bg-gray-800 text-white p-2 flex items-center justify-between">
+          {/* ... header content ... */}
           <div className="flex items-center gap-2">
             <Calculator className="w-5 h-5" />
             <span className="font-semibold">Kalkulator Kosztów Zbrojenia</span>
@@ -357,6 +438,7 @@ Zespół Kalkulatora Kosztów Zbrojenia
 
         <div ref={printRef} className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="space-y-6">
+            {/* ... form sections ... */}
             <div className="bg-gray-50 p-4 rounded-lg">
               <h2 className="text-lg font-semibold text-gray-900 mb-3">Typ kształtu</h2>
               <div className="grid grid-cols-3 gap-2">
@@ -419,7 +501,7 @@ Zespół Kalkulatora Kosztów Zbrojenia
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className={`grid gap-4 ${shapeType === 'rectangle' ? 'grid-cols-3' : (shapeType === 'U' ? 'grid-cols-3' : 'grid-cols-2')}`}>
               {shapeType === 'rectangle' && (
                 <>
                   <div>
@@ -444,9 +526,20 @@ Zespół Kalkulatora Kosztów Zbrojenia
                       className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 bg-gray-50 p-2"
                     />
                   </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      Zakład (cm)
+                    </label>
+                    <input
+                      type="number"
+                      value={overlapLength}
+                      onChange={(e) => setOverlapLength(Math.max(0, Number(e.target.value)))}
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 bg-gray-50 p-2"
+                    />
+                  </div>
                 </>
               )}
-              
+
               {shapeType === 'L' && (
                 <>
                   <div>
@@ -513,6 +606,7 @@ Zespół Kalkulatora Kosztów Zbrojenia
               )}
             </div>
 
+
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700">
@@ -525,7 +619,7 @@ Zespół Kalkulatora Kosztów Zbrojenia
                 >
                   {rebarSpecs.map(spec => (
                     <option key={spec.diameter} value={spec.diameter}>
-                      Φ {spec.diameter} ({spec.weightPerMeter} kg/mb)
+                      Φ {spec.diameter} ({spec.weightPerMeter.toFixed(3)} kg/mb)
                     </option>
                   ))}
                 </select>
@@ -548,6 +642,7 @@ Zespół Kalkulatora Kosztów Zbrojenia
                 </select>
               </div>
             </div>
+
 
             <div className="bg-gray-50 p-4 rounded-lg">
               <h2 className="text-lg font-semibold text-gray-900 mb-3">Dane klienta</h2>
@@ -576,18 +671,29 @@ Zespół Kalkulatora Kosztów Zbrojenia
                     placeholder="adres@email.com"
                   />
                 </div>
-                <button
-                  onClick={generateOffer}
-                  className="w-full flex items-center justify-center gap-2 bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition-colors"
+                
+                {/* PDF Download Button */}
+                <PDFDownloadLink
+                  document={<OfferPDFDocument {...offerPdfProps} />}
+                  fileName={`oferta-${clientName.replace(/\s+/g, '_') || 'klient'}-${new Date().toLocaleDateString('pl-PL')}.pdf`}
+                  className="w-full flex items-center justify-center gap-2 bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 transition-colors"
                 >
-                  <Download className="w-4 h-4" />
-                  Generuj ofertę
-                </button>
+                  {({ blob, url, loading, error }) =>
+                    loading ? 'Generowanie PDF...' : (
+                      <>
+                        <Download className="w-4 h-4" />
+                        Pobierz Ofertę PDF
+                      </>
+                    )
+                  }
+                </PDFDownloadLink>
+
               </div>
             </div>
           </div>
 
           <div className="space-y-6">
+            {/* ... results and shape preview ... */}
             <div className="bg-gray-50 p-4 rounded-lg">
               <h2 className="text-lg font-semibold text-gray-900 mb-3">Podgląd kształtu:</h2>
               <div className="flex justify-center mb-4">
@@ -644,7 +750,7 @@ Zespół Kalkulatora Kosztów Zbrojenia
 
             {shapeType === 'rectangle' && (
               <div className="text-xs text-gray-500">
-                * Zakład stały: 10 cm
+                * Zakład: {overlapLength} cm
               </div>
             )}
           </div>
