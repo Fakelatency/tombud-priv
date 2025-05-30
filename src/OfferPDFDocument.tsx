@@ -264,7 +264,6 @@ const OfferPDFDocument: React.FC<OfferPDFProps> = (props) => {
 
         {/* Intro Section */}
         <View style={styles.section}>
-          <Text style={styles.text}>Szanowny Kliencie {clientName ? clientName : ''},</Text>
           <Text style={styles.text}>
             Dziękujemy za zainteresowanie naszą ofertą. Poniżej przedstawiamy szczegółową wycenę dla {numberOfItems} szt.:
           </Text>
