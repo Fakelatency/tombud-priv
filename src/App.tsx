@@ -8,16 +8,18 @@ import OfferPDFDocument from './OfferPDFDocument'; // Adjust path if needed
 import '@fontsource/lato/latin-400.css';
 import '@fontsource/lato/latin-700.css';
 
-
-
-
 interface CalculationResult {
-  length: number;
-  weight: number;
-  netCost: number;
-  marginAmount: number;
-  netWithMargin: number;
-  grossCost: number;
+  length: number; // Length of a single item
+  weight: number; // Weight of a single item
+  totalWeight: number; // Total weight for all items
+  netCost: number; // Net cost for a single item (before margin)
+  totalNetCost: number; // Total net cost for all items (before margin)
+  marginAmount: number; // Margin amount for a single item
+  totalMarginAmount: number; // Total margin amount for all items
+  netWithMargin: number; // Net cost with margin for a single item
+  totalNetWithMargin: number; // Total net cost with margin for all items
+  grossCost: number; // Gross cost for a single item
+  totalGrossCost: number; // Total gross cost for all items
 }
 
 interface RebarSpec {
@@ -53,6 +55,7 @@ function App() {
   const [clientName, setClientName] = useState<string>('');
   const [clientEmail, setClientEmail] = useState<string>('');
   const [overlapLength, setOverlapLength] = useState<number>(5);
+  const [numberOfItems, setNumberOfItems] = useState<number>(1); // <-- New state for number of items
 
   const handlePrint = useReactToPrint({
     content: () => printRef.current,
@@ -74,19 +77,26 @@ function App() {
         break;
     }
 
-    const weight = shapeLength * selectedRebar.weightPerMeter;
-    const netCost = weight * selectedRebar.pricePerKg;
-    const marginAmount = netCost * (margin / 100);
-    const netWithMargin = netCost + marginAmount;
-    const grossCost = netWithMargin * (1 + VAT_RATE);
+    const singleItemWeight = shapeLength * selectedRebar.weightPerMeter;
+    const singleItemNetCost = singleItemWeight * selectedRebar.pricePerKg;
+    const singleItemMarginAmount = singleItemNetCost * (margin / 100);
+    const singleItemNetWithMargin = singleItemNetCost + singleItemMarginAmount;
+    const singleItemGrossCost = singleItemNetWithMargin * (1 + VAT_RATE);
+
+    const safeNumberOfItems = Math.max(1, numberOfItems); // Ensure at least 1 item
 
     return {
-      length: shapeLength,
-      weight,
-      netCost,
-      marginAmount,
-      netWithMargin,
-      grossCost
+      length: shapeLength, // Length of one item
+      weight: singleItemWeight, // Weight of one item
+      totalWeight: singleItemWeight * safeNumberOfItems,
+      netCost: singleItemNetCost,
+      totalNetCost: singleItemNetCost * safeNumberOfItems,
+      marginAmount: singleItemMarginAmount,
+      totalMarginAmount: singleItemMarginAmount * safeNumberOfItems,
+      netWithMargin: singleItemNetWithMargin,
+      totalNetWithMargin: singleItemNetWithMargin * safeNumberOfItems,
+      grossCost: singleItemGrossCost,
+      totalGrossCost: singleItemGrossCost * safeNumberOfItems,
     };
   };
 
@@ -122,9 +132,7 @@ function App() {
     shapeType === 'rectangle' ? overlapLength : 0
   );
   
-  // Ensure maxDimension is not zero to prevent division by zero or excessively large scale
   const safeMaxDimension = currentMaxDimension > 0 ? currentMaxDimension : 1;
-
 
   const scale = (svgSize - svgPadding * 3) / safeMaxDimension;
   const startX = svgPadding * 1.5;
@@ -179,7 +187,6 @@ function App() {
           strokeWidth="1"
           strokeDasharray="4"
         />
-        {/* Dimension ticks for HTML SVG */}
         <line x1={x1 - 3 * Math.sin(angle)} y1={y1 + 3 * Math.cos(angle)} x2={x1 + 3 * Math.sin(angle)} y2={y1 - 3 * Math.cos(angle)} stroke="#6b7280" strokeWidth="1" />
         <line x1={x2 - 3 * Math.sin(angle)} y1={y2 + 3 * Math.cos(angle)} x2={x2 + 3 * Math.sin(angle)} y2={y2 - 3 * Math.cos(angle)} stroke="#6b7280" strokeWidth="1" />
         <text
@@ -215,7 +222,7 @@ const renderShape = () => {
         const dimLineEndX = dimLineStartX - S * cosA;
         const dimLineEndY = dimLineStartY + S * sinA;
 
-        const halfTotalOffset = overlapLineOffset / 2;
+        const halfTotalOffset = overlapLineOffset / 3;
         const perpOffsetX = halfTotalOffset * sinA;
         const perpOffsetY = halfTotalOffset * cosA;
 
@@ -355,45 +362,6 @@ const renderShape = () => {
   };
   const result = calculateShape();
 
-// -  const generateOffer = () => {
-// -    const date = new Date().toLocaleDateString('pl-PL');
-// -    const offerContent = `
-// - OFERTA CENOWA - ${date}
-// -
-// - Szanowny/a ${clientName},
-// -
-// - Dziękujemy za zainteresowanie naszą ofertą. Poniżej przedstawiamy szczegóły wyceny:
-// -
-// - SPECYFIKACJA:
-// - - Typ kształtu: ${shapeType === 'rectangle' ? `Prostokąt (Zakład: ${overlapLength}cm)` : shapeType === 'L' ? 'Kształt L' : 'Kształt U'}
-// - - Średnica pręta: Φ${diameter}mm
-// - - Długość całkowita: ${result.length.toFixed(2)}m
-// - - Waga: ${result.weight.toFixed(2)}kg
-// -
-// - KOSZTY:
-// - 1. Cena netto: ${result.netWithMargin.toFixed(2)} zł
-// - 2. VAT (23%): ${(result.grossCost - result.netWithMargin).toFixed(2)} zł
-// - 3. Cena końcowa brutto: ${result.grossCost.toFixed(2)} zł
-// -
-// - Oferta ważna przez 14 dni od daty wystawienia.
-// -
-// - Z poważaniem,
-// - Zespół Kalkulatora Kosztów Zbrojenia
-// -    `;
-// -
-// -    const blob = new Blob([offerContent], { type: 'text/plain' });
-// -    const url = URL.createObjectURL(blob);
-// -    const a = document.createElement('a');
-// -    a.href = url;
-// -    a.download = `oferta-${date}.txt`;
-// -    document.body.appendChild(a);
-// -    a.click();
-// -    document.body.removeChild(a);
-// -    URL.revokeObjectURL(url);
-// -  };
-
-
-  // Props for the PDF document
   const offerPdfProps = {
     clientName,
     clientEmail,
@@ -407,14 +375,13 @@ const renderShape = () => {
     arm3Length: shapeType === 'U' ? arm3Length : undefined,
     result,
     margin,
+    numberOfItems, // <-- Pass numberOfItems to PDF
   };
-
 
   return (
     <div className={`min-h-screen bg-gray-100 p-4 ${isMaximized ? 'p-0' : ''}`}>
-      <div className={`bg-white rounded-lg shadow-lg overflow-hidden ${isMaximized ? 'w-full h-screen m-0' : 'max-w-4xl mx-auto'}`}>
+      <div className={`bg-white rounded-lg shadow-lg overflow-hidden ${isMaximized ? 'w-full m-0' : 'max-w-4xl mx-auto'}`}>
         <div className="bg-gray-800 text-white p-2 flex items-center justify-between">
-          {/* ... header content ... */}
           <div className="flex items-center gap-2">
             <Calculator className="w-5 h-5" />
             <span className="font-semibold">Kalkulator Kosztów Zbrojenia</span>
@@ -438,7 +405,6 @@ const renderShape = () => {
 
         <div ref={printRef} className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="space-y-6">
-            {/* ... form sections ... */}
             <div className="bg-gray-50 p-4 rounded-lg">
               <h2 className="text-lg font-semibold text-gray-900 mb-3">Typ kształtu</h2>
               <div className="grid grid-cols-3 gap-2">
@@ -471,10 +437,142 @@ const renderShape = () => {
                 </button>
               </div>
             </div>
+            
+            {/* Dimensions Inputs Section */}
+            <div className="bg-gray-50 p-4 rounded-lg">
+                <h2 className="text-lg font-semibold text-gray-900 mb-3">Wymiary i Ilość</h2>
+                <div className={`grid gap-4 ${shapeType === 'rectangle' ? 'grid-cols-3' : (shapeType === 'U' ? 'grid-cols-3' : 'grid-cols-2')} mb-4`}>
+                    {shapeType === 'rectangle' && (
+                        <>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">
+                            Szerokość (cm)
+                            </label>
+                            <input
+                            type="number"
+                            value={width}
+                            min="0"
+                            onChange={(e) => setWidth(Number(e.target.value))}
+                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 bg-white p-2"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">
+                            Wysokość (cm)
+                            </label>
+                            <input
+                            type="number"
+                            value={height}
+                            min="0"
+                            onChange={(e) => setHeight(Number(e.target.value))}
+                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 bg-white p-2"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">
+                            Zakład (cm)
+                            </label>
+                            <input
+                            type="number"
+                            value={overlapLength}
+                            min="0"
+                            onChange={(e) => setOverlapLength(Math.max(0, Number(e.target.value)))}
+                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 bg-white p-2"
+                            />
+                        </div>
+                        </>
+                    )}
+
+                    {shapeType === 'L' && (
+                        <>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">
+                            Ramię poziome (cm)
+                            </label>
+                            <input
+                            type="number"
+                            value={arm1Length}
+                            min="0"
+                            onChange={(e) => setArm1Length(Number(e.target.value))}
+                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 bg-white p-2"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">
+                            Ramię pionowe (cm)
+                            </label>
+                            <input
+                            type="number"
+                            value={arm2Length}
+                            min="0"
+                            onChange={(e) => setArm2Length(Number(e.target.value))}
+                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 bg-white p-2"
+                            />
+                        </div>
+                        </>
+                    )}
+
+                    {shapeType === 'U' && (
+                        <>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">
+                            Ramię lewe (cm)
+                            </label>
+                            <input
+                            type="number"
+                            value={arm1Length}
+                            min="0"
+                            onChange={(e) => setArm1Length(Number(e.target.value))}
+                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 bg-white p-2"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">
+                            Szerokość (cm)
+                            </label>
+                            <input
+                            type="number"
+                            value={width}
+                            min="0"
+                            onChange={(e) => setWidth(Number(e.target.value))}
+                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 bg-white p-2"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">
+                            Ramię prawe (cm)
+                            </label>
+                            <input
+                            type="number"
+                            value={arm3Length}
+                            min="0"
+                            onChange={(e) => setArm3Length(Number(e.target.value))}
+                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 bg-white p-2"
+                            />
+                        </div>
+                        </>
+                    )}
+                </div>
+                {/* Number of Items Input */}
+                <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                        Liczba sztuk
+                    </label>
+                    <input
+                        type="number"
+                        value={numberOfItems}
+                        min="1"
+                        step="1"
+                        onChange={(e) => setNumberOfItems(Math.max(1, parseInt(e.target.value, 10)))}
+                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 bg-white p-2"
+                    />
+                </div>
+            </div>
+
 
             <div className="bg-gray-50 p-4 rounded-lg">
               <h2 className="text-lg font-semibold text-gray-900 mb-3">Parametry prętów</h2>
-              <div className="grid grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
                 {rebarSpecs.map(spec => (
                   <div key={spec.diameter} className="bg-white p-3 rounded-lg border-2 border-gray-200">
                     <div className="text-center font-bold text-blue-600 mb-2">Φ {spec.diameter}</div>
@@ -487,6 +585,7 @@ const renderShape = () => {
                         className="w-full text-sm p-1 border rounded"
                         placeholder="kg/mb"
                       />
+                       <span className="text-xs text-gray-500 block text-center">kg/mb</span>
                       <input
                         type="number"
                         step="0.01"
@@ -495,151 +594,46 @@ const renderShape = () => {
                         className="w-full text-sm p-1 border rounded"
                         placeholder="zł/kg"
                       />
+                       <span className="text-xs text-gray-500 block text-center">zł/kg</span>
                     </div>
                   </div>
                 ))}
               </div>
-            </div>
+            
+              <div className="grid grid-cols-2 gap-4">
+                  <div>
+                      <label className="block text-sm font-medium text-gray-700">
+                          Średnica pręta (mm)
+                      </label>
+                      <select
+                          value={diameter}
+                          onChange={(e) => setDiameter(Number(e.target.value))}
+                          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 bg-white p-2"
+                      >
+                          {rebarSpecs.map(spec => (
+                              <option key={spec.diameter} value={spec.diameter}>
+                                  Φ {spec.diameter} ({spec.weightPerMeter.toFixed(3)} kg/mb)
+                              </option>
+                          ))}
+                      </select>
+                  </div>
 
-            <div className={`grid gap-4 ${shapeType === 'rectangle' ? 'grid-cols-3' : (shapeType === 'U' ? 'grid-cols-3' : 'grid-cols-2')}`}>
-              {shapeType === 'rectangle' && (
-                <>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">
-                      Szerokość (cm)
-                    </label>
-                    <input
-                      type="number"
-                      value={width}
-                      onChange={(e) => setWidth(Number(e.target.value))}
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 bg-gray-50 p-2"
-                    />
+                      <label className="block text-sm font-medium text-gray-700">
+                          Marża (%)
+                      </label>
+                      <select
+                          value={margin}
+                          onChange={(e) => setMargin(Number(e.target.value))}
+                          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 bg-white p-2"
+                      >
+                          {MARGIN_STEPS.map(value => (
+                              <option key={value} value={value}>
+                                  {value}%
+                              </option>
+                          ))}
+                      </select>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">
-                      Wysokość (cm)
-                    </label>
-                    <input
-                      type="number"
-                      value={height}
-                      onChange={(e) => setHeight(Number(e.target.value))}
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 bg-gray-50 p-2"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">
-                      Zakład (cm)
-                    </label>
-                    <input
-                      type="number"
-                      value={overlapLength}
-                      onChange={(e) => setOverlapLength(Math.max(0, Number(e.target.value)))}
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 bg-gray-50 p-2"
-                    />
-                  </div>
-                </>
-              )}
-
-              {shapeType === 'L' && (
-                <>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">
-                      Ramię poziome (cm)
-                    </label>
-                    <input
-                      type="number"
-                      value={arm1Length}
-                      onChange={(e) => setArm1Length(Number(e.target.value))}
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 bg-gray-50 p-2"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">
-                      Ramię pionowe (cm)
-                    </label>
-                    <input
-                      type="number"
-                      value={arm2Length}
-                      onChange={(e) => setArm2Length(Number(e.target.value))}
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 bg-gray-50 p-2"
-                    />
-                  </div>
-                </>
-              )}
-
-              {shapeType === 'U' && (
-                <>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">
-                      Ramię lewe (cm)
-                    </label>
-                    <input
-                      type="number"
-                      value={arm1Length}
-                      onChange={(e) => setArm1Length(Number(e.target.value))}
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 bg-gray-50 p-2"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">
-                      Szerokość (cm)
-                    </label>
-                    <input
-                      type="number"
-                      value={width}
-                      onChange={(e) => setWidth(Number(e.target.value))}
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 bg-gray-50 p-2"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">
-                      Ramię prawe (cm)
-                    </label>
-                    <input
-                      type="number"
-                      value={arm3Length}
-                      onChange={(e) => setArm3Length(Number(e.target.value))}
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 bg-gray-50 p-2"
-                    />
-                  </div>
-                </>
-              )}
-            </div>
-
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700">
-                  Średnica pręta (mm)
-                </label>
-                <select
-                  value={diameter}
-                  onChange={(e) => setDiameter(Number(e.target.value))}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 bg-gray-50 p-2"
-                >
-                  {rebarSpecs.map(spec => (
-                    <option key={spec.diameter} value={spec.diameter}>
-                      Φ {spec.diameter} ({spec.weightPerMeter.toFixed(3)} kg/mb)
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700">
-                  Marża (%)
-                </label>
-                <select
-                  value={margin}
-                  onChange={(e) => setMargin(Number(e.target.value))}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 bg-gray-50 p-2"
-                >
-                  {MARGIN_STEPS.map(value => (
-                    <option key={value} value={value}>
-                      {value}%
-                    </option>
-                  ))}
-                </select>
               </div>
             </div>
 
@@ -672,7 +666,6 @@ const renderShape = () => {
                   />
                 </div>
                 
-                {/* PDF Download Button */}
                 <PDFDownloadLink
                   document={<OfferPDFDocument {...offerPdfProps} />}
                   fileName={`oferta-${clientName.replace(/\s+/g, '_') || 'klient'}-${new Date().toLocaleDateString('pl-PL')}.pdf`}
@@ -693,9 +686,8 @@ const renderShape = () => {
           </div>
 
           <div className="space-y-6">
-            {/* ... results and shape preview ... */}
             <div className="bg-gray-50 p-4 rounded-lg">
-              <h2 className="text-lg font-semibold text-gray-900 mb-3">Podgląd kształtu:</h2>
+              <h2 className="text-lg font-semibold text-gray-900 mb-3">Podgląd kształtu (1 szt.):</h2>
               <div className="flex justify-center mb-4">
                 <svg width={svgSize} height={svgSize} className="bg-white border border-gray-200 rounded-lg">
                   {renderShape()}
@@ -704,14 +696,17 @@ const renderShape = () => {
             </div>
 
             <div className="bg-gray-50 p-4 rounded-lg">
-              <h2 className="text-lg font-semibold text-gray-900 mb-3">Wynik kalkulacji:</h2>
+              <h2 className="text-lg font-semibold text-gray-900 mb-3">Wynik kalkulacji (dla {numberOfItems} szt.):</h2>
               <div className="space-y-4">
                 <div className="space-y-2">
                   <p className="text-sm text-gray-600">
-                    Długość całkowita: <span className="font-medium text-gray-900">{result.length.toFixed(2)} m</span>
+                    Długość 1 szt.: <span className="font-medium text-gray-900">{result.length.toFixed(2)} m</span>
                   </p>
                   <p className="text-sm text-gray-600">
-                    Waga: <span className="font-medium text-gray-900">{result.weight.toFixed(2)} kg</span>
+                    Waga 1 szt.: <span className="font-medium text-gray-900">{result.weight.toFixed(2)} kg</span>
+                  </p>
+                   <p className="text-sm text-gray-600">
+                    Waga całkowita ({numberOfItems} szt.): <span className="font-medium text-gray-900">{result.totalWeight.toFixed(2)} kg</span>
                   </p>
                 </div>
 
@@ -719,29 +714,29 @@ const renderShape = () => {
                   <thead>
                     <tr className="border-b">
                       <th className="text-left py-2">Rodzaj ceny</th>
-                      <th className="text-right py-2">Kwota</th>
+                      <th className="text-right py-2">Kwota (łącznie)</th>
                     </tr>
                   </thead>
                   <tbody>
                     <tr className="border-b">
-                      <td className="py-2">Cena netto (bez marży)</td>
-                      <td className="text-right font-medium">{result.netCost.toFixed(2)} zł</td>
+                      <td className="py-2">Całkowita cena netto (bez marży)</td>
+                      <td className="text-right font-medium">{result.totalNetCost.toFixed(2)} zł</td>
                     </tr>
                     <tr className="border-b text-gray-600">
-                      <td className="py-2">Marża ({margin}%)</td>
-                      <td className="text-right">{result.marginAmount.toFixed(2)} zł</td>
+                      <td className="py-2">Całkowita marża ({margin}%)</td>
+                      <td className="text-right">{result.totalMarginAmount.toFixed(2)} zł</td>
                     </tr>
                     <tr className="border-b font-medium">
-                      <td className="py-2">Cena netto z marżą</td>
-                      <td className="text-right">{result.netWithMargin.toFixed(2)} zł</td>
+                      <td className="py-2">Całkowita cena netto z marżą</td>
+                      <td className="text-right">{result.totalNetWithMargin.toFixed(2)} zł</td>
                     </tr>
                     <tr className="border-b text-gray-600">
-                      <td className="py-2">VAT (23%)</td>
-                      <td className="text-right">{(result.grossCost - result.netWithMargin).toFixed(2)} zł</td>
+                      <td className="py-2">Całkowity VAT (23%)</td>
+                      <td className="text-right">{(result.totalGrossCost - result.totalNetWithMargin).toFixed(2)} zł</td>
                     </tr>
                     <tr className="font-semibold">
-                      <td className="py-2">Cena brutto</td>
-                      <td className="text-right">{result.grossCost.toFixed(2)} zł</td>
+                      <td className="py-2">Całkowita cena brutto</td>
+                      <td className="text-right">{result.totalGrossCost.toFixed(2)} zł</td>
                     </tr>
                   </tbody>
                 </table>
@@ -750,7 +745,7 @@ const renderShape = () => {
 
             {shapeType === 'rectangle' && (
               <div className="text-xs text-gray-500">
-                * Zakład: {overlapLength} cm
+                * Zakład dla 1 szt.: {overlapLength} cm
               </div>
             )}
           </div>
